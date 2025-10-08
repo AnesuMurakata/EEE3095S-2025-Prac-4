@@ -52,6 +52,11 @@ DMA_HandleTypeDef hdma_tim2_ch1;
 
 /* USER CODE BEGIN PV */
 // TODO: Add code for global variables, including LUTs
+
+// Global variables for waveform switching
+uint8_t current_waveform = 0;  // 0=Sine, 1=Sawtooth, 2=Triangle, 3=Piano, 4=Guitar, 5=Drum
+uint32_t last_button_time = 0;  // For debouncing
+const uint32_t DEBOUNCE_TIME = 200;  // 200ms debounce time
 uint32_t Piano_LUT = {1184, 1213, 1255, 1294, 1333, 1369, 1403, 1425,
 	    1445, 1486, 1536, 1581, 1619, 1671, 1738, 1799,
 	    1875, 1965, 2061, 2171, 2295, 2428, 2567, 2693,
@@ -504,15 +509,51 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 void EXTI0_IRQHandler(void){
+	// Debounce using HAL_GetTick()
+	uint32_t current_time = HAL_GetTick();
+	if (current_time - last_button_time < DEBOUNCE_TIME) {
+		HAL_GPIO_EXTI_IRQHandler(Button0_Pin); // Clear interrupt flags
+		return; // Ignore button press if too soon
+	}
+	last_button_time = current_time;
 
-	// TODO: Debounce using HAL_GetTick()
+	// Disable DMA transfer and abort IT
+	__HAL_TIM_DISABLE_DMA(&htim2, TIM_DMA_CC1);
+	HAL_DMA_Abort_IT(&hdma_tim2_ch1);
 
+	// Switch to next waveform
+	current_waveform = (current_waveform + 1) % 6;  // Cycle through 6 waveforms
 
-	// TODO: Disable DMA transfer and abort IT, then start DMA in IT mode with new LUT and re-enable transfer
-	// HINT: Consider using C's "switch" function to handle LUT changes
+	// Start DMA in IT mode with new LUT based on current_waveform
+	switch(current_waveform) {
+		case 0: // Sine
+			HAL_DMA_Start_IT(&hdma_tim2_ch1, (uint32_t)Sin_LUT, DestAddress, NS);
+			lcd_putstring("Sine");
+			break;
+		case 1: // Sawtooth
+			HAL_DMA_Start_IT(&hdma_tim2_ch1, (uint32_t)Saw_LUT, DestAddress, NS);
+			lcd_putstring("Sawtooth");
+			break;
+		case 2: // Triangle
+			HAL_DMA_Start_IT(&hdma_tim2_ch1, (uint32_t)Triangle_LUT, DestAddress, NS);
+			lcd_putstring("Triangle");
+			break;
+		case 3: // Piano
+			HAL_DMA_Start_IT(&hdma_tim2_ch1, (uint32_t)Piano_LUT, DestAddress, NS);
+			lcd_putstring("Piano");
+			break;
+		case 4: // Guitar
+			HAL_DMA_Start_IT(&hdma_tim2_ch1, (uint32_t)Guitar_LUT, DestAddress, NS);
+			lcd_putstring("Guitar");
+			break;
+		case 5: // Drum
+			HAL_DMA_Start_IT(&hdma_tim2_ch1, (uint32_t)Drum_LUT, DestAddress, NS);
+			lcd_putstring("Drum");
+			break;
+	}
 
-
-
+	// Re-enable DMA transfer
+	__HAL_TIM_ENABLE_DMA(&htim2, TIM_DMA_CC1);
 
 	HAL_GPIO_EXTI_IRQHandler(Button0_Pin); // Clear interrupt flags
 }
